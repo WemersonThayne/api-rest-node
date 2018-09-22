@@ -22,8 +22,17 @@ const server = express();
 /**configurar o middleware do body-parser */
 server.use(bodyParser.urlencoded({ extended: true }));
 server.use(bodyParser.json());
-
 server.use(multParty());
+
+server.use(function(req,res,next){
+
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE');
+    res.setHeader('Access-Control-Allow-Headers', 'content-type');
+    res.setHeader('Access-Control-Allow-Credentials', true);
+
+    next();
+});
 
 /**exportar o objeto server */
 
@@ -52,14 +61,10 @@ server.get('/', function (req, res) {
 
 server.post('/api', function (req, res) {
 
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    //var dados = req.body;
-
-
     var pathOrigem = req.files.arquivo.path;
     var urlImagem = new Date().getTime()+'_'+req.files.arquivo.originalFilename;
     var pathDestino = './uploads/' + urlImagem;
-
+    
     fs.rename(pathOrigem, pathDestino, function (err) {
         if (err) {
             res.status(500).json({ error: err });
@@ -90,7 +95,6 @@ server.post('/api', function (req, res) {
 
 
 server.get('/api', function (req, res) {
-    res.setHeader('Access-Control-Allow-Origin', '*');
     db.open(function (err, mongoclient) {
         mongoclient.collection('postagens', function (err, collection) {
             collection.find().toArray(function (err, results) {
@@ -106,7 +110,6 @@ server.get('/api', function (req, res) {
 });
 
 server.get('/api/:id', function (req, res) {
-    res.setHeader('Access-Control-Allow-Origin', '*');
     db.open(function (err, mongoclient) {
         mongoclient.collection('postagens', function (err, collection) {
             collection.find(objectId(req.params.id)).toArray(function (err, results) {
@@ -125,13 +128,20 @@ server.get('/api/:id', function (req, res) {
 server.put('/api/:id', function (req, res) {
     db.open(function (err, mongoclient) {
         mongoclient.collection('postagens', function (err, collection) {
-            collection.update({ _id: objectId(req.params.id) },
-                { $set: { titulo: req.body.titulo } },
+            collection.update(
+                { _id : objectId(req.params.id) },
+                { $push : {
+                    comentarios : {
+                        id_comentario : new objectId(),
+                        comentario : req.body.comentario
+                        }
+                    }
+                },
                 {},
-                function (err, records) {
-                    if (err) {
+                function(err, records){
+                    if(err){
                         res.json(err);
-                    } else {
+                    }else{
                         res.json(records);
                     }
                     mongoclient.close();
@@ -144,18 +154,39 @@ server.put('/api/:id', function (req, res) {
 
 
 server.delete('/api/:id', function (req, res) {
-    res.setHeader('Access-Control-Allow-Origin', '*');
     db.open(function (err, mongoclient) {
         mongoclient.collection('postagens', function (err, collection) {
-            collection.remove({ _id: objectId(req.params.id) }, function (err, records) {
-                if (err) {
-                    res.json(err);
-                } else {
-                    res.json(records);
-                }
-                mongoclient.close();
-            });
+            collection.update(
+                { },
+                { $pull : {
+                    comentarios : {
+                        id_comentario : objectId(req.params.id)
+                        }
+                    }
+                },
+                { multi : true },
+                function(err, records){
+                    if(err){
+                        res.json(err);
+                    }else{
+                        res.json(records);
+                    }
+                    mongoclient.close();
+                }  
+            );
         });
     });
 });
 
+
+server.get('/imagens/:imagem', function (req, res) {
+    var img = req.params.imagem;
+    fs.readFile('./uploads/'+img,function(err,content){
+        if(err){
+            res.status(404).json(err);
+            return;
+        }
+        res.writeHead(200,{'content-type':'imagen/jpg'})
+        res.end(content);
+    });
+});
